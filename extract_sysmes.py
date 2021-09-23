@@ -7,7 +7,7 @@ count_offset = '0x4'
 int_pos = int(count_offset, 16)
 string_count = int.from_bytes(data[int_pos:int_pos + 4], byteorder='little')
 
-print(string_count)
+print('Found', string_count, 'strings')
 
 header_offset = '0x18'
 
