@@ -13,6 +13,8 @@ count_offset = '0x4'
 int_pos = int(count_offset, 16)
 string_count = int.from_bytes(old_data[int_pos:int_pos + 4], byteorder='little')
 
+print(string_count)
+
 if len(translations) != string_count:
     raise SystemExit('Wrong number of strings in translation file!')
 
@@ -21,14 +23,34 @@ first_position = int(header_offset, 16)
 
 # header offset + string_count * 8
 strings_position = first_position + string_count * 8
-# TODO calculate this offset
-footer_offset = '0x184DA'
+
+print(hex(strings_position))
+
+# calculate footer offset
+zero_count = 0
+footer_position = strings_position
+
+int_pos = strings_position
+while zero_count < string_count:
+    value = old_data[int_pos]
+
+    while value != 0:
+        int_pos += 1
+        value = old_data[int_pos]
+
+    int_pos += 1
+    footer_position = int_pos
+
+    zero_count += 1
+
+# footer_offset = '0x184DA'
+print(hex(footer_position))
 
 # prepare header and footer
 # we will prepend our new data with this
 header_data = old_data[0:int(header_offset, 16)]
 # we will append our new data with this
-footer_data = old_data[int(footer_offset, 16):len(old_data)]
+footer_data = old_data[footer_position:len(old_data)]
 
 # write header
 new_sysmes.write(header_data)
