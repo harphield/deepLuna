@@ -17,8 +17,12 @@ if len(translations) != string_count:
     raise SystemExit('Wrong number of strings in translation file!')
 
 header_offset = '0x18'
+first_position = int(header_offset, 16)
+
+# header offset + string_count * 8
+strings_position = first_position + string_count * 8
+# TODO calculate this offset
 footer_offset = '0x184DA'
-strings_offset = '0x2ED8'
 
 # prepare header and footer
 # we will prepend our new data with this
@@ -29,10 +33,8 @@ footer_data = old_data[int(footer_offset, 16):len(old_data)]
 # write header
 new_sysmes.write(header_data)
 # write string positions
-first_position = int(header_offset, 16)
 pos = first_position
 i = 0
-strings_position = int(strings_offset, 16)
 while pos < first_position + string_count * 8:
     new_sysmes.write(strings_position.to_bytes(8, byteorder='little'))
     pos += 8
