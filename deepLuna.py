@@ -1,39 +1,26 @@
-###Import packages
-try:
-    import tkinter as tk
-except ImportError or ModuleNotFoundError:
-    install("tkinter")
-    import tkinter as tk
+### Import packages
+import ast
+import contextlib
+import datetime
+import os
+import re
+import requests
+import shutil
+import time
+
+from PIL import ImageTk, Image
+from math import floor
+
+import tkinter as tk
 from tkinter.filedialog import askopenfilename, asksaveasfile
 from tkinter.ttk import *
+
 import webbrowser
-try:
-    import subprocess
-except ImportError or ModuleNotFoundError:
-    install("subprocess")
-    import subprocess
-from math import floor
-import time
-try:
-    from PIL import ImageTk, Image
-except ImportError or ModuleNotFoundError:
-    install("Pillow")
-    from PIL import ImageTk, Image
-import random
-import sys
-import requests
-import json
-import time
-import datetime
-import ast
-import re
-import os
-import shutil
+
 from pathlib import Path
 
 from unpack_allsrc import *
 from prep_tpl import *
-
 
 ###Global variables and config.ini initialisation
 
@@ -353,11 +340,12 @@ def traverse_updates(path, namesScrTable, scrTable, newTable, dataScriptJP):
     for root, dirs, files in os.walk(path):
         for dir in dirs:
             traverse_updates(os.path.join(root, dir), namesScrTable, scrTable, newTable, dataScriptJP)
+            shutil.rmtree(os.path.join(root, dir))
 
         for filename in files:
             if filename.split('.')[0] in namesScrTable:
                 file_path = os.path.join(root, filename)
-                newTable = txtfile_update_table(file_path, scrTable, newTable, dataScriptJP)
+                newTable = new_txtfile_update_table(file_path, scrTable, newTable, dataScriptJP)
                 os.remove(file_path)
                 print(file_path+" done")
 
@@ -372,7 +360,6 @@ def txtfile_update_table(dayFile,table_scr,mainTable,scriptTextMrgStream):
     cleanText = re.sub(r"C\:\>",r"",cleanText)
     cleanText = re.sub(r"C\:\>",r"",cleanText)
     cleanText = re.split(r"\n|\#",cleanText)
-
 
     redName = os.path.basename(dayFile).split('.')[0]
 
@@ -404,6 +391,65 @@ def txtfile_update_table(dayFile,table_scr,mainTable,scriptTextMrgStream):
     return(newMainTable)
 
     cleanTextFile.close()
+
+
+def new_txtfile_update_table(dayFile,table_scr,mainTable,scriptTextMrgStream):
+
+    # Open scene file
+    with open(dayFile, "r+", encoding="utf-8") as cleanTextFile:
+        cleanText = cleanTextFile.read()
+
+    # We eliminate choices indication and split the text into pages (and since we start by page 1, we eliminate the first element of the list)
+    cleanText = re.sub(r"C\:\>",r"",cleanText)
+    cleanText = re.sub(r"C\:\>",r"",cleanText)
+    cleanText = re.split(r"\<Page[0-9 ]+\>",cleanText)[1:]
+
+    # We split the pages on newlines or special pound character, and remove the '' remaining after regex splitting with \n and pound
+    cleanText = [list(filter(lambda a: a != '', re.split(r"\n|\#",page))) for page in cleanText]
+
+    # Get name of the scene from its path
+    redName = os.path.basename(dayFile).split('.')[0]
+
+    # Search for the corresponding scene in the table_scr
+    for day in table_scr:
+        if day[0] == redName:
+            assoDay = day[1]
+            break
+
+    # Check whether we have the right number of pages in the scene
+    if len(assoDay) != len(cleanText):
+        raise SystemExit('Bad number of pages in %s.' %dayFile)
+    else:
+        # Initialisation of local variables
+        dayTable = []
+
+        # Creating new table variable where we'll put the new data and that we'll return to the caller
+        newMainTable = mainTable
+
+        # We run through the pages of the day
+        for i in range(len(assoDay)):
+
+            # We get special formating for the pages, converting the _n, _r_n or _s symbols to the corresponding elements of the general table (mainTable)
+            pageUpdated = page_to_SpeLineInfo(assoDay[i])
+
+            # If number of lines on the page doesn't correspond, raise an error
+            if len(pageUpdated) != len(cleanText[i]):
+                raise SystemExit('Bad number of lines in page %d of file %s.'  %(i+1,dayFile))
+            else:
+                #We run through the lines of the pages - if they are identical to the japanese, we change nothing, otherwise we add the translation
+                for l in range(len(pageUpdated)):
+                    extrLine = extract_by_line(scriptTextMrgStream,int(pageUpdated[l][0])+1,i+1,redName,pageUpdated[l][1],pageUpdated[l][2])
+                    extrLine[2] = extrLine[2] if cleanText[i][l] == extrLine[1] else cleanText[i][l]
+                    dayTable.append(extrLine)
+
+        # And we update the newMainTable
+        for i in  range(len(dayTable)):
+            for j in range(len(newMainTable)):
+                if dayTable[i][0] == newMainTable[j][0] and dayTable[i][2] != 'TRANSLATION':
+                    newMainTable[j][2] = dayTable[i][2]
+
+        return(newMainTable)
+
 
 
 
@@ -1217,7 +1263,7 @@ class MainWindow:
         self.labels_txt_orig.grid(row=1,column=1)
 
         self.text_orig = tk.Text(self.frame_texte, width=60, height=10, borderwidth=5, highlightbackground="#A8A8A8")
-        self.text_orig.bind("<Key>", lambda e: self.ctrlEvent(e))
+        self.text_orig.config(state=tk.DISABLED)
         self.text_orig.grid(row=2,column=1)
 
         self.labels_txt_trad = tk.Label(self.frame_texte, text="Translated text:")
@@ -1260,6 +1306,13 @@ class MainWindow:
         self.show_text(None)
         self.load_percentage()
 
+    @contextlib.contextmanager
+    def editable_orig_text(self):
+        self.text_orig.config(state=tk.NORMAL)
+        try:
+            yield None
+        finally:
+            self.text_orig.config(state=tk.DISABLED)
 
     def load_percentage(self):
 
@@ -1488,8 +1541,9 @@ class MainWindow:
             table_day = gen_day_subtable(table_day_name,self.table_scr_file,self.table_file)
         if table_day != []:
             self.listbox_offsets.delete(0,tk.END)
-            self.text_orig.delete("1.0",tk.END)
-            self.text_trad.delete("1.0",tk.END)
+            with self.editable_orig_text():
+                self.text_orig.delete("1.0", tk.END)
+                self.text_trad.delete("1.0", tk.END)
             global n_trad_day
             n_trad_day = 0
             self.len_table_day = len(table_day)
@@ -1510,11 +1564,11 @@ class MainWindow:
             print("This day is empty.")
         print("Day loaded!")
 
-
     def open_table(self):
         self.listbox_offsets.delete(0,tk.END)
-        self.text_orig.delete("1.0",tk.END)
-        self.text_trad.delete("1.0",tk.END)
+        with self.editable_orig_text():
+            self.text_orig.delete("1.0", tk.END)
+            self.text_trad.delete("1.0", tk.END)
         self.csv = open('table.txt', "r+", encoding='utf-8')
         self.csv.close()
         global n_trad
@@ -1539,10 +1593,11 @@ class MainWindow:
             cs = (0,)
         else:
             for offset in cs:
-                self.text_orig.delete("1.0",tk.END)
-                self.text_trad.delete("1.0",tk.END)
-                self.text_orig.insert("1.0", table_day[offset][1])
-                self.text_trad.insert("1.0", table_day[offset][2])
+                with self.editable_orig_text():
+                    self.text_orig.delete("1.0", tk.END)
+                    self.text_trad.delete("1.0", tk.END)
+                    self.text_orig.insert("1.0", table_day[offset][1])
+                    self.text_trad.insert("1.0", table_day[offset][2])
 
 
     def ctrlEvent(self,event):
@@ -1751,10 +1806,11 @@ class MainWindow:
             self.listbox_offsets.see(self.pos_text)
             self.listbox_offsets.select_set(self.pos_text)
             self.listbox_offsets.activate(self.pos_text)
-            self.text_orig.delete("1.0",tk.END)
-            self.text_trad.delete("1.0",tk.END)
-            self.text_orig.insert("1.0", table_day[self.pos_text][1])
-            self.text_trad.insert("1.0", table_day[self.pos_text][2])
+            with self.editable_orig_text():
+                self.text_orig.delete("1.0", tk.END)
+                self.text_trad.delete("1.0", tk.END)
+                self.text_orig.insert("1.0", table_day[self.pos_text][1])
+                self.text_trad.insert("1.0", table_day[self.pos_text][2])
             posSearch = 0
 
         self.search_text()
@@ -1779,10 +1835,11 @@ class MainWindow:
         self.listbox_offsets.see(self.pos_text)
         self.listbox_offsets.select_set(self.pos_text)
         self.listbox_offsets.activate(self.pos_text)
-        self.text_orig.delete("1.0",tk.END)
-        self.text_trad.delete("1.0",tk.END)
-        self.text_orig.insert("1.0", table_day[self.pos_text][1])
-        self.text_trad.insert("1.0", table_day[self.pos_text][2])
+        with self.editable_orig_text():
+            self.text_orig.delete("1.0", tk.END)
+            self.text_trad.delete("1.0", tk.END)
+            self.text_orig.insert("1.0", table_day[self.pos_text][1])
+            self.text_trad.insert("1.0", table_day[self.pos_text][2])
 
         posSearch = 0
 
@@ -1820,10 +1877,11 @@ class MainWindow:
             self.listbox_offsets.see(self.pos_text)
             self.listbox_offsets.select_set(self.pos_text)
             self.listbox_offsets.activate(self.pos_text)
-            self.text_orig.delete("1.0",tk.END)
-            self.text_trad.delete("1.0",tk.END)
-            self.text_orig.insert("1.0", table_day[self.pos_text][1])
-            self.text_trad.insert("1.0", table_day[self.pos_text][2])
+            with self.editable_orig_text():
+                self.text_orig.delete("1.0", tk.END)
+                self.text_trad.delete("1.0", tk.END)
+                self.text_orig.insert("1.0", table_day[self.pos_text][1])
+                self.text_trad.insert("1.0", table_day[self.pos_text][2])
 
         if len(searchResults) == 0 or len(searchResults) == 1:
             self.prev_button.config(state=tk.DISABLED)
@@ -1848,10 +1906,11 @@ class MainWindow:
         self.listbox_offsets.see(self.pos_text)
         self.listbox_offsets.select_set(self.pos_text)
         self.listbox_offsets.activate(self.pos_text)
-        self.text_orig.delete("1.0",tk.END)
-        self.text_trad.delete("1.0",tk.END)
-        self.text_orig.insert("1.0", table_day[self.pos_text][1])
-        self.text_trad.insert("1.0", table_day[self.pos_text][2])
+        with self.editable_orig_text():
+            self.text_orig.delete("1.0", tk.END)
+            self.text_trad.delete("1.0", tk.END)
+            self.text_orig.insert("1.0", table_day[self.pos_text][1])
+            self.text_trad.insert("1.0", table_day[self.pos_text][2])
 
         if posSearch == len(searchResults)-1:
             self.next_button.config(state=tk.DISABLED)
@@ -1873,10 +1932,11 @@ class MainWindow:
         self.listbox_offsets.see(self.pos_text)
         self.listbox_offsets.select_set(self.pos_text)
         self.listbox_offsets.activate(self.pos_text)
-        self.text_orig.delete("1.0",tk.END)
-        self.text_trad.delete("1.0",tk.END)
-        self.text_orig.insert("1.0", table_day[self.pos_text][1])
-        self.text_trad.insert("1.0", table_day[self.pos_text][2])
+        with self.editable_orig_text():
+            self.text_orig.delete("1.0", tk.END)
+            self.text_trad.delete("1.0", tk.END)
+            self.text_orig.insert("1.0", table_day[self.pos_text][1])
+            self.text_trad.insert("1.0", table_day[self.pos_text][2])
 
         if posSearch == 0:
             self.prev_button.config(state=tk.DISABLED)
