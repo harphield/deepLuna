@@ -418,7 +418,9 @@ def new_txtfile_update_table(dayFile,table_scr,mainTable,scriptTextMrgStream):
 
     # Check whether we have the right number of pages in the scene
     if len(assoDay) != len(cleanText):
-        raise SystemExit('Bad number of pages in %s.' %dayFile)
+        print('Bad number of pages in %s.' %dayFile)
+        return mainTable;
+        # raise SystemExit('Bad number of pages in %s.' %dayFile)
     else:
         # Initialisation of local variables
         dayTable = []
@@ -434,7 +436,9 @@ def new_txtfile_update_table(dayFile,table_scr,mainTable,scriptTextMrgStream):
 
             # If number of lines on the page doesn't correspond, raise an error
             if len(pageUpdated) != len(cleanText[i]):
-                raise SystemExit('Bad number of lines in page %d of file %s.'  %(i+1,dayFile))
+                print('Bad number of lines in page %d of file %s.'  %(i+1,dayFile))
+                return mainTable;
+                # raise SystemExit('Bad number of lines in page %d of file %s.'  %(i+1,dayFile))
             else:
                 #We run through the lines of the pages - if they are identical to the japanese, we change nothing, otherwise we add the translation
                 for l in range(len(pageUpdated)):
@@ -793,13 +797,13 @@ def insert_translation(scriptFile,translatedText,scriptFileTranslated):
     for line in dataTLFile:
 
         if type(line[0]) == str:
-            newLine = line[1].encode("utf-8")+b'\x0D\x0A' if line[2] == 'TRANSLATION' else add_linebreaks(line[2],55).encode("utf-8")+b'\x0D\x0A'
+            newLine = line[1].encode("utf-8")+b'\x0D\x0A' if line[2] == 'TRANSLATION' else (add_linebreaks(line[2],55).encode("utf-8") if line[6][0][:2] != 'QA' else line[2].encode("utf-8"))+b'\x0D\x0A'
             bytesListTLText += newLine
             totalLenText = add_zeros(hexsum(totalLenText,hex(len(newLine)))[2:])
             bytesNewPointers += bytes.fromhex(totalLenText)
         else:
             if line[2] != "TRANSLATION":
-                newText = add_linebreaks(line[2],55).split('#')
+                newText = add_linebreaks(line[2],55).split('#') if line[6][0][:2] != 'QA' else line[2].split('#')
             else:
                 newText = line[1].split('#')
 
